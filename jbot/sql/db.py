@@ -415,16 +415,15 @@ class SQLDatabase:
                 shuffle(result)
                 old_len = len(result)
                 result = result[:hard_limit]
-                truncated = f'There were too many results! {old_len-hard_limit} rows were omitted!'
-            res: Sequence = [
-                tuple(truncate_word(c, length=self._max_string_length) for c in r)
+                truncated = f'\nIMPORTANT: There were too many results! {old_len-hard_limit} rows were omitted!'
+            res = [
+                '- ' + '\t'.join(str(truncate_word(c, length=self._max_string_length)) for c in r)
                 for r in result
             ]
+            res = '\n'.join(res)
         else:
-            res = tuple(
-                truncate_word(c, length=self._max_string_length) for c in result
-            )
-        return f'{str(res)}\n{truncated}'
+            res = '- ' + '\t'.join(truncate_word(c, length=self._max_string_length) for c in result)
+        return f'```{res}{truncated}´´´'
 
     def get_table_info_no_throw(self, table_names: Optional[List[str]] = None) -> str:
         """Get information about specified tables.

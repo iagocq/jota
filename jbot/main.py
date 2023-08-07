@@ -26,7 +26,7 @@ def main():
   # courses_agent = create_sql_agent(llm=llm, toolkit=toolkit, verbose=True, agent_type=AgentType.OPENAI_FUNCTIONS)
   sql_chain = SQLChain(llm=llm, db=db, database_description=DATABASE_DESCRIPTION_COURSES, verbose=True)
   with get_openai_callback() as cb:
-    sql_chain.run("qual é o número total de professores que dão aulas para pelo menos 2 disciplinas diferentes?")
+    sql_chain.run("liste algumas disciplinas de ciência da computação e quem ministra elas")
     print(cb)
   exit()
 
