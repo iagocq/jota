@@ -151,6 +151,7 @@ class SQLChain(Chain):
         else:
             attempt.exit = True
 
+        attempt.answers['Answer'] = steps.get('Answer', '<no response>')
         return attempt
 
     def _call(self,
@@ -172,7 +173,7 @@ class SQLChain(Chain):
             if not attempt.retry or attempt.exit:
                 break
 
-        return {'response': last.answers.get('Answer', '<no response>')}
+        return {'response': last.answers['Answer']}
 
 __all__ = [
   "SQLChain"
