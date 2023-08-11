@@ -411,8 +411,6 @@ class SQLDatabase:
             return ""
         elif isinstance(result, list):
             if hard_limit > 0 and len(result) > hard_limit:
-                from random import shuffle
-                shuffle(result)
                 old_len = len(result)
                 result = result[:hard_limit]
                 truncated = f'\nIMPORTANT: There were too many results! {old_len-hard_limit} rows were omitted!'

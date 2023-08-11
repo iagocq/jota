@@ -18,9 +18,9 @@ import sys
 
 def main():
   dotenv.load_dotenv()
-  langchain.debug = True
+  # langchain.debug = True
 
-  llm = ChatOpenAI(temperature=0.9, verbose=True)
+  llm = ChatOpenAI(temperature=0.5, verbose=True)
 
   db = SQLDatabase.from_uri(f'sqlite:///db.sqlite3')
   # toolkit = SQLDatabaseToolkit(db=db, llm=llm)
@@ -35,7 +35,7 @@ def main():
       Tool(
         name="Courses-Human",
         description=(
-          "A human answers a plain-text, human-like question about the university's current courses, discipline offerings, curricula, classes, professors, and related topics."
+          "A human answers a plain-text, human-like question in portuguese about the university's current courses, discipline offerings, curricula, classes, professors, and related topics."
           "\nCopy and paste the question you want to ask the human here."
         ),
         func=ask_about_courses
