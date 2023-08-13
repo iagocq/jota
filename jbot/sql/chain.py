@@ -14,15 +14,6 @@ USER_COLOR = "yellow"
 AI_COLOR = "green"
 SQL_COLOR = "red"
 
-class Attempt(BaseModel):
-    answers: dict[str, str]
-    sql_result: Optional[str] = None
-    retry: bool = False
-    exit: bool = False
-
-    def __str__(self) -> str:
-        return f'Query: {self.answers["SQLQuery"]}\nResponse: {self.sql_result!r}\n'
-
 class AIAttempt(BaseModel):
     sql_query: Optional[str] = None
     answer: Optional[str] = None
@@ -33,6 +24,10 @@ class AIAttempt(BaseModel):
 class SQLResult(BaseModel):
     sql_result: str
     sql_error: bool
+
+class FailedAttempt(BaseModel):
+    attempt: AIAttempt
+    result: SQLResult
 
 def parse_action(action: Optional[str]) -> str:
     if action is None or 'information' in action.lower():
@@ -86,6 +81,7 @@ class SQLChain(Chain):
             else:
                 raise TypeError(f"Unknown message type {msg.__class__.__name__}")
 
+        # if isinstance(msg, SystemMessage): return
         if run_manager is not None:
             run_manager.on_text(content, color=color, verbose=self.verbose)
 
@@ -93,7 +89,7 @@ class SQLChain(Chain):
         for m in msg:
             self.print_msg(m, run_manager)
 
-    def _generate_query_2(self, user_prompt: str, previous_attempts: list[Any], run_manager: Optional[CallbackManagerForChainRun] = None) -> AIAttempt:
+    def _generate_query(self, user_prompt: str, previous_attempts: list[FailedAttempt], run_manager: Optional[CallbackManagerForChainRun] = None) -> AIAttempt:
         p = prompt.GEN_QUERY_PROMPT.format(
             database_description=self.database_description
         )
@@ -102,7 +98,7 @@ class SQLChain(Chain):
         u_prompt = HumanMessage(content=f'{user_prompt.strip()}\n')
 
         ai_response = self.llm.predict_messages(
-            messages=[gen_query_prompt, *prompt.examples, u_prompt],
+            messages=[gen_query_prompt, u_prompt],
             stop=["\nSQLResult:"]
         )
 
@@ -114,7 +110,7 @@ class SQLChain(Chain):
         answer = steps.get('Answer')
         return AIAttempt(sql_query=sql_query, answer=answer, action=action, full_content=ai_response.content, human_message=u_prompt)
 
-    def _run_query_2(self, query: str, run_manager: Optional[CallbackManagerForChainRun] = None) -> SQLResult:
+    def _run_query(self, query: str, run_manager: Optional[CallbackManagerForChainRun] = None) -> SQLResult:
         query = query.strip('`').lstrip('sql')
         try:
             sql_result = self.db.run(query, hard_limit=5)
@@ -131,8 +127,7 @@ class SQLChain(Chain):
             content=f'SQLQuery: {attempt.sql_query}\nSQLResult: {result.sql_result}\n'
         )
         ai_response = self.llm.predict_messages(
-            messages=[answer_prompt, *prompt.answer_examples, attempt.human_message, ai_msg],
-            stop=["\nAction:"]
+            messages=[answer_prompt, *prompt.answer_examples, attempt.human_message, ai_msg]
         )
 
         self.print_msgs([ai_response], run_manager)
@@ -142,19 +137,31 @@ class SQLChain(Chain):
 
         return answer
 
-    def _try_to_answer(self, user_prompt: str, run_manager: Optional[CallbackManagerForChainRun] = None) -> Optional[str]:
-        query_attempt = self._generate_query_2(user_prompt, [], run_manager)
-        if query_attempt.sql_query is None: return None # TODO: handle this
-        result = self._run_query_2(query_attempt.sql_query, run_manager)
-        if result.sql_error: return None # TODO: handle this
-        answer = self._get_answer(query_attempt, result, run_manager)
-        return answer
+    def _try_to_answer(self, user_prompt: str, max_attempts: int = 3, run_manager: Optional[CallbackManagerForChainRun] = None) -> Optional[str]:
+        previous_attempts: list[FailedAttempt] = []
+        for i in range(max_attempts):
+            query_attempt = self._generate_query(user_prompt, previous_attempts, run_manager)
+            if query_attempt.sql_query is None: return query_attempt.answer or query_attempt.full_content
+            result = self._run_query(query_attempt.sql_query, run_manager)
+            if i < max_attempts - 1 and result.sql_error:
+                previous_attempts.append(FailedAttempt(attempt=query_attempt, result=result))
+                continue
+            else:
+                return self._get_answer(query_attempt, result, run_manager)
+
+    def run_sql(self, sql_query: str) -> str:
+        l = sql_query.lower()
+        restricted = ['delete', 'update', 'insert', 'create', 'alter', 'drop', 'pragma']
+        if any(r in l for r in restricted):
+            return 'Sorry, I can only answer SELECT queries.'
+        result = self._run_query(sql_query)
+        return result.sql_result
 
     def _call(self,
               inputs: dict[str, Any],
               run_manager: Optional[CallbackManagerForChainRun] = None):
         user_prompt = inputs['prompt']
-        answer = self._try_to_answer(user_prompt, run_manager)
+        answer = self._try_to_answer(user_prompt, 1, run_manager)
         if answer is None:
             return {'response': 'Sorry, I failed to get an answer.'}
         else:
