@@ -410,10 +410,11 @@ class SQLDatabase:
         if not result:
             return ""
         elif isinstance(result, list):
+            result = list(dict.fromkeys(result))
             if hard_limit > 0 and len(result) > hard_limit:
                 old_len = len(result)
                 result = result[:hard_limit]
-                truncated = f'\nIMPORTANT: There were too many results! {old_len-hard_limit} rows were omitted!'
+                truncated = f'\nIMPORTANT: There were too many results! Other {old_len-hard_limit} rows were omitted!'
             res = [
                 '- ' + '\t'.join(str(truncate_word(c, length=self._max_string_length)) for c in r)
                 for r in result
@@ -421,7 +422,7 @@ class SQLDatabase:
             res = '\n'.join(res)
         else:
             res = '- ' + '\t'.join(truncate_word(c, length=self._max_string_length) for c in result)
-        return f'```{res}{truncated}´´´'
+        return f'{res}{truncated}'
 
     def get_table_info_no_throw(self, table_names: Optional[List[str]] = None) -> str:
         """Get information about specified tables.

@@ -3,7 +3,7 @@ from langchain.schema.language_model import BaseLanguageModel
 from langchain.callbacks.manager import CallbackManagerForChainRun
 from langchain.schema import SystemMessage, AIMessage, HumanMessage, BaseMessage
 from typing import Any, Optional
-from . import prompt
+from . import prompt_gpt4 as prompt
 from .db import SQLDatabase
 import re
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ class AIAttempt(BaseModel):
     sql_query: Optional[str] = None
     answer: Optional[str] = None
     action: Optional[str] = None
+    step_by_step: Optional[str] = None
     full_content: str
     human_message: HumanMessage
 
@@ -40,6 +41,7 @@ def parse_action(action: Optional[str]) -> str:
         return 'user'
 
 _steps_re = re.compile(r'(\w+):\s+(.*?)(?=\n\w+:|$)', re.DOTALL)
+_query_re = re.compile(r'^(```(sql(ite)?)?)?(?P<query>.*?)(```)?$', re.DOTALL | re.IGNORECASE)
 def separate_steps(message: str) -> dict[str, str]:
     parts = {}
     steps = _steps_re.findall(message)
@@ -81,7 +83,7 @@ class SQLChain(Chain):
             else:
                 raise TypeError(f"Unknown message type {msg.__class__.__name__}")
 
-        # if isinstance(msg, SystemMessage): return
+        if isinstance(msg, SystemMessage): return
         if run_manager is not None:
             run_manager.on_text(content, color=color, verbose=self.verbose)
 
@@ -96,38 +98,48 @@ class SQLChain(Chain):
         gen_query_prompt = SystemMessage(content=p)
 
         u_prompt = HumanMessage(content=f'{user_prompt.strip()}\n')
+        self.print_msgs([gen_query_prompt, u_prompt], run_manager)
 
         ai_response = self.llm.predict_messages(
             messages=[gen_query_prompt, u_prompt],
             stop=["\nSQLResult:"]
         )
 
-        self.print_msgs([gen_query_prompt, u_prompt, ai_response], run_manager)
+        self.print_msg(ai_response, run_manager)
 
         steps = separate_steps(ai_response.content)
         sql_query = steps.get('SQLQuery')
-        action = parse_action(steps.get('Action'))
+        step_by_step = steps.get('StepByStep')
         answer = steps.get('Answer')
-        return AIAttempt(sql_query=sql_query, answer=answer, action=action, full_content=ai_response.content, human_message=u_prompt)
+        return AIAttempt(sql_query=sql_query, answer=answer, step_by_step=step_by_step, full_content=ai_response.content, human_message=u_prompt)
 
     def _run_query(self, query: str, run_manager: Optional[CallbackManagerForChainRun] = None) -> SQLResult:
-        query = query.strip('`').lstrip('sql')
+        m = _query_re.match(query.strip())
+        query = m.group('query')
+
         try:
-            sql_result = self.db.run(query, hard_limit=5)
+            sql_result = self.db.run(query, hard_limit=10)
             error = False
         except OperationalError as e:
             sql_result = e._message()
             error = True
+        sql_result = sql_result or 'No results.'
+        sql_result = f'```{sql_result}```'
         self.print_msgs([f'SQLResult: {sql_result}'], run_manager)
         return SQLResult(sql_result=sql_result, sql_error=error)
 
     def _get_answer(self, attempt: AIAttempt, result: SQLResult, run_manager: Optional[CallbackManagerForChainRun] = None) -> str:
         answer_prompt = SystemMessage(content=prompt.ANSWER_PROMPT.format())
         ai_msg = AIMessage(
-            content=f'SQLQuery: {attempt.sql_query}\nSQLResult: {result.sql_result}\n'
+            content=(
+                f'StepByStep: [ ... ]\n'
+                f'SQLQuery: {attempt.sql_query}\n'
+                f'SQLResult: {result.sql_result}\n'
+                f'Answer: '
+            )
         )
         ai_response = self.llm.predict_messages(
-            messages=[answer_prompt, *prompt.answer_examples, attempt.human_message, ai_msg]
+            messages=[answer_prompt, attempt.human_message, ai_msg]
         )
 
         self.print_msgs([ai_response], run_manager)

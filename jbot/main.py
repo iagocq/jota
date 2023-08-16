@@ -13,13 +13,13 @@ from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from .sql.db import SQLDatabase
 import langchain
 from .sql.chain import SQLChain
-from .sql.prompt import DATABASE_DESCRIPTION_COURSES
+from .sql.prompt_gpt4 import DATABASE_DESCRIPTION_COURSES
 import sys
 
 def create_chain():
   dotenv.load_dotenv()
 
-  llm = ChatOpenAI(temperature=0.5, verbose=True)
+  llm = ChatOpenAI(temperature=0.5, verbose=True, model='gpt-4')
 
   db = SQLDatabase.from_uri(f'sqlite:///db.sqlite3')
 

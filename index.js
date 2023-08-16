@@ -7,6 +7,7 @@ var allowed_chats = [
     /^Criazada da facul$/,
 ];
 
+var last_messages = {};
 var allowed_chat_ids = [];
 
 const client = new Client({
@@ -32,7 +33,8 @@ client.on('ready', async () => {
 });
 
 function isAllowedChat(chat_id) {
-    return allowed_chat_ids.includes(chat_id);
+    // return allowed_chat_ids.includes(chat_id);
+    return true;
 }
 
 async function fetchJson(url, data) {
@@ -45,8 +47,8 @@ async function fetchJson(url, data) {
     }).then(res => res.json());
 }
 
-async function answerPrompt(prompt) {
-    return await fetchJson('http://localhost:5000/prompt', { prompt: prompt });
+async function answerPrompt(prompt, context) {
+    return await fetchJson('http://localhost:5000/prompt', { prompt: prompt, context: context });
 }
 
 async function answerQuery(query) {
@@ -55,15 +57,26 @@ async function answerQuery(query) {
 
 client.on('message', async msg => {
     if (!isAllowedChat(msg.from)) return;
+    let last_message = last_messages[msg.from] || '';
+    last_messages[msg.from] = msg.body;
 
-    if (msg.body.match(/^jota/i)) {
-        await msg.react('🧠');
-        let response = await answerPrompt(msg.body);
+    let chat = await msg.getChat();
+
+    if (msg.body.length > 2 && (!chat.isGroup || msg.body.match(/^jota/i))) {
+        let reply = msg.hasQuotedMsg ? (await msg.getQuotedMessage()).body : '';
+
+        await chat.sendStateTyping();
+        let response = await answerPrompt(msg.body, reply || last_message);
+
+        await chat.clearState();
         await msg.reply(response.answer);
+        last_messages[msg.from] = response.answer;
+
         // await client.sendMessage(msg.from, `Gerado com o seguinte comando SQL:\n\`\`\`${response.sql}\`\`\``);
     } else if (msg.body.match(/^!sql /i)) {
-        await msg.react('🔄');
+        await chat.sendStateTyping();
         let response = await answerQuery(msg.body.replace(/^!sql /i, ''));
+        await chat.clearState();
         await msg.reply(response.results);
     }
 });

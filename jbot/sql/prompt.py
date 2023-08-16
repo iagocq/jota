@@ -1,13 +1,15 @@
 from langchain.prompts import PromptTemplate
 from langchain.schema import AIMessage, HumanMessage
 
-_admin_prefix = """Your name is Jota. You're a portuguese-speaking database administrator and helpful assistant.
+_admin_prefix = """Your name is Jota. You're a portuguese-speaking database administrator and a helpful assistant.
 Above all, you're a database administrator. You are very cautious and attentive to the process you always follow to answer user prompts.
+When asked, inform the user that all information in this database is non authoritative.
 
 {database_description}
 """
 
 DATABASE_DESCRIPTION_COURSES = """This database manages academic information for the university, covering courses, subjects, professors, class schedules, and classroom details, all interconnected to provide a comprehensive overview of the educational offerings.
+This database only contains information about the current academic semester.
 
 Columns for table Cursos:
 \tid_curso TEXT PK
@@ -30,13 +32,13 @@ GAC106\tFundamentos de Programação I
 Columns for table DisciplinasMatriz:
 \tid_disc TEXT PK
 \tid_curso TEXT PK
-\tperiodo INT (nullable)
-\tcategoria_eletiva TEXT (nullable)
+\tperiodo INT (null for electives)
+\tis_eletiva INT
 Example data for table DisciplinasMatriz:
-id_disc\tid_curso\tperiodo\tcategoria_eletiva
-GCC125\tG010\t5\tNULL
-GCC176\tG010\tNULL\tA
-GCC176\tG014\t4\tNULL
+id_disc\tid_curso\tperiodo\tis_eletiva
+GCC125\tG010\t5\t0
+GCC176\tG010\tNULL\t1
+GCC176\tG014\t4\t0
 ...
 
 Columns for table Professores:
@@ -54,10 +56,12 @@ Columns for table OfertasDisciplina:
 \tid_curso TEXT
 \tid_prof INT
 \tturma TEXT
+\tvagas_restantes INT
+\tvagas_ocupadas INT
 Example data for table OfertasDisciplina:
-id_oferta\tid_disc\tid_curso\tid_prof\tturma
-1\tGCC125\tG010\t1\t10A
-2\tGCC125\tG014\t1\t14A
+id_oferta\tid_disc\tid_curso\tid_prof\tturma\tvagas_restantes\tvagas_ocupadas
+1\tGCC125\tG010\t1\t10A\t10\t30
+2\tGCC125\tG014\t1\t14A\t10\t30
 ...
 
 Columns for table AulasOferta:
@@ -110,7 +114,8 @@ Reasoning: The user wants to know the name of the professor that teaches the hig
 TablesColumns: The name of the professor is available in the Professores.nome_prof column. The disciplines that the professor teaches are available in the OfertasDisciplina.id_disc column. There should be an entry for Engenharia Florestal in the Cursos.nome_disc column. The following tables should be joined: Professores, OfertasDisciplina, Cursos.
 HaveAllInformation: All the information is obtainable with the database.
 SQLQuery: SELECT P.nome_prof, COUNT(DISTINCT OD.id_disc) as num_disciplinas FROM Professores P JOIN OfertasDisciplina OD ON P.id_prof = OD.id_prof JOIN Cursos C ON C.id_curso = OD.id_curso WHERE C.nome_curso LIKE '%Engenharia Florestal%' GROUP BY P.id_prof ORDER BY num_disciplinas DESC LIMIT 1;
-SQLResult: `[("ANA CAROLINA MAIOLI CAMPOS BARBOSA", 4)]`
+SQLResult: ```- ANA CAROLINA MAIOLI CAMPOS BARBOSA\t4
+```
 Answer: O professor que ministra mais disciplinas para Engenharia Florestal é Ana Carolina Maioli Campos Barbosa, com um total de 4 disciplinas ministradas.
 Action: successful query
 ---
