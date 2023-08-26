@@ -1,10 +1,10 @@
-from ..ai import AIModel, AIMessage
-from pydantic import BaseModel, Field
+from ..ai import AIModel, AIModelMessage
+from pydantic import Field
 from .api import OpenAIClient, OpenAIMessage, ChatCompletionRequest, UsageContext, Usage
 from typing import AsyncIterator, Optional
 
-def _messages_to_openai_messages(message: list[AIMessage]) -> list[OpenAIMessage]:
-    def _message_to_openai_message(message: AIMessage) -> OpenAIMessage:
+def _messages_to_openai_messages(message: list[AIModelMessage]) -> list[OpenAIMessage]:
+    def _message_to_openai_message(message: AIModelMessage) -> OpenAIMessage:
         return OpenAIMessage(content=message.content, role=message.role, name=message.name)
     return [_message_to_openai_message(message) for message in message]
 
@@ -18,7 +18,7 @@ class OpenAIModel(AIModel):
     def usage(self) -> Usage:
         return self.usage_context.usage[self.model]
 
-    async def generate_multiple(self, history: list[AIMessage], stop: list[str], n: int, max_tokens: Optional[int] = None) -> list[str]:
+    async def generate_multiple(self, history: list[AIModelMessage], stop: list[str], n: int, max_tokens: Optional[int] = None) -> list[str]:
         openai_messages = _messages_to_openai_messages(history)
         req = ChatCompletionRequest(
             model=self.model,
@@ -31,7 +31,7 @@ class OpenAIModel(AIModel):
         response = await self.openai_client.chat_completion(req, self.usage_context)
         return [choice.message.content for choice in response.choices]
 
-    async def generate_stream(self, history: list[AIMessage], stop: list[str], max_tokens: Optional[int] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, history: list[AIModelMessage], stop: list[str], max_tokens: Optional[int] = None) -> AsyncIterator[str]:
         openai_messages = _messages_to_openai_messages(history)
         req = ChatCompletionRequest(
             model=self.model,
@@ -45,3 +45,6 @@ class OpenAIModel(AIModel):
             delta = chunk.choices[0].delta
             if delta.content is not None:
                 yield delta.content
+
+    def override(self, *, temperature: float) -> AIModel:
+        return OpenAIModel(**self.dict(), temperature=temperature)

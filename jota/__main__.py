@@ -3,7 +3,9 @@ import dotenv
 import asyncio
 from .openai.api import OpenAIClient, UsageContext
 from .openai.ai import OpenAIModel
-from .agent import ConversationalAgent, History, ChatMessage, ClassificationAgent, QueryGeneratorAgent, HintMessage
+from .agent import ConversationalAgent, HistoryView, ChatMessage, Classifier, Hinter
+from .sql_hinter import HintMessage, SQLHinter, EnhancerStep, SQLiteExecutor
+import aiosqlite
 
 dotenv.load_dotenv()
 
@@ -15,19 +17,9 @@ async def amain():
     model_3_5 = OpenAIModel(model='gpt-3.5-turbo', openai_client=client, usage_context=usage_context)
     model_4 = OpenAIModel(model='gpt-4', openai_client=client, usage_context=usage_context)
 
-    hist = History(messages=[])
-    bot = ConversationalAgent(
-        history=hist,
-        information=[
-            f"The name of your creator is Iago. His email is {email}",
-            "Your source code is available at https://github.com/iagocq/jota",
-            "You have access to information related to the courses database."
-            "You only provide factual information"
-        ],
-        model=model_3_5
-    )
+    hist = HistoryView()
 
-    classifier = ClassificationAgent(
+    classifier = Classifier(
         model=model_3_5,
         categories={
             'courses': 'Questions related to the courses database. This database contains information about the current courses, classes, classrooms, teachers.',
@@ -36,11 +28,36 @@ async def amain():
         }
     )
 
-    sql = QueryGeneratorAgent(
-        model=model_4,
-        engine='sqlite',
-        db_schema=schema,
-        history=hist
+    enhances: list[EnhancerStep] = [
+        EnhancerStep(model=model_3_5.override(temperature=0.5), n_generations=2),
+        EnhancerStep(model=model_3_5.override(temperature=1), n_generations=5),
+    ]
+
+    db = aiosqlite.connect('db.sqlite3')
+
+    executor = SQLiteExecutor(engine='sqlite', db_schema=schema, connection=db)
+
+    sql = SQLHinter(
+        sql_executor=executor,
+        enhancement_steps=enhances,
+        history_view=hist
+    )
+
+    bot = ConversationalAgent(
+        history_view=hist,
+        information=[
+            f"The name of your creator is Iago. His email is {email}",
+            "Your source code is available at https://github.com/iagocq/jota",
+            "You have access to information related to the courses database."
+            "You try to provide factual information, but you may make mistakes."
+        ],
+        model=model_3_5,
+        classifier=classifier,
+        hinter=Hinter(
+            generators={
+                'courses': sql.hint
+            }
+        )
     )
 
     name = input('Your name: ')
@@ -52,20 +69,10 @@ async def amain():
             print(hist)
             continue
 
-        msg = ChatMessage(sender=name, content=message)
-        classification = await classifier.classify(message)
-        hint_msg = None
-        if classification != 'general': print(f'Classification: {classification}')
-        if classification == 'courses':
-            # query = await sql.generate(message)
-            # print(query)
-            resp = f"""
-There were no results for the user question
-"""
-            hint_msg = HintMessage(sender=None, content=resp)
+        msg = ChatMessage(role='user', sender=name, content=message)
 
         print(f'Bot: ', end='', flush=True)
-        async for reply in bot.streaming_reply_to_message(msg, hint_msg):
+        async for reply in bot.streaming_reply_to_message(msg):
             print(reply, end='', flush=True)
         print()
 
