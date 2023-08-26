@@ -115,9 +115,13 @@ class SQLHinter(BaseModel):
 
     _query_re = re.compile(r'^(```(sql(ite)?)?)?(?P<query>.*?)(```)?$', re.DOTALL | re.IGNORECASE)
     def _get_query(self, query: str) -> Optional[str]:
-        match = self._query_re.match(query.strip())
-        if not match: return None
-        return match.group('query').strip()
+        query = query.strip()
+        for q in query.split('\n\n'):
+            q, _, _ = query.partition(';')
+            match = self._query_re.match(q)
+            if not match:
+                return None
+            return match.group('query').strip()
 
     def _prepare_msgs(self, message: Message, context: HistoryView, *, last_result: Optional[SQLResult] = None) -> list[AIModelMessage]:
         msgs: list[AIModelMessage] = []
@@ -178,7 +182,10 @@ class SQLHinter(BaseModel):
 
         queries_by_results.sort(key=lambda x: x[1])
         if not queries_by_results: return None
-        return queries_by_results[0][0]
+        for result, n in queries_by_results:
+            if n > 0: return result
+        else:
+            return queries_by_results[0][0]
 
     async def generate_enhanced_query(self, message: Message, context: HistoryView) -> Optional[SQLResult]:
         last_result = None
@@ -209,7 +216,7 @@ class SQLHinter(BaseModel):
             text = (
                 'The user query returned the following results:\n\n'
                 f'Column names: {columns}\n'
-                f'Rows:\n{rows}'
+                f'Results:\n{rows}'
             )
         elif result.error:
             text = 'I encounted an error while fetching the information for the user.\n'

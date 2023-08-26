@@ -18,7 +18,7 @@ class OpenAIModel(AIModel):
     def usage(self) -> Usage:
         return self.usage_context.usage[self.model]
 
-    async def generate_multiple(self, history: list[AIModelMessage], stop: list[str], n: int, max_tokens: Optional[int] = None) -> list[str]:
+    async def generate_multiple(self, history: list[AIModelMessage], *, stop: list[str] = [], n: int, max_tokens: Optional[int] = None) -> list[str]:
         openai_messages = _messages_to_openai_messages(history)
         req = ChatCompletionRequest(
             model=self.model,
@@ -31,7 +31,7 @@ class OpenAIModel(AIModel):
         response = await self.openai_client.chat_completion(req, self.usage_context)
         return [choice.message.content for choice in response.choices]
 
-    async def generate_stream(self, history: list[AIModelMessage], stop: list[str], max_tokens: Optional[int] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, history: list[AIModelMessage], *, stop: list[str] = [], max_tokens: Optional[int] = None) -> AsyncIterator[str]:
         openai_messages = _messages_to_openai_messages(history)
         req = ChatCompletionRequest(
             model=self.model,
@@ -47,4 +47,4 @@ class OpenAIModel(AIModel):
                 yield delta.content
 
     def override(self, *, temperature: float) -> AIModel:
-        return OpenAIModel(**self.dict(), temperature=temperature)
+        return OpenAIModel(**{**self.dict(), 'temperature': temperature})

@@ -18,6 +18,7 @@ class Message(BaseModel):
     content: str
     role: str
     name: str
+    id: Optional[int] = None
 
     def to_message(self) -> AIModelMessage:
         return AIModelMessage(role=self.role, name=self.name, content=self.__str__())
@@ -27,7 +28,6 @@ class ChatMessage(Message):
     sent_at: datetime = Field(default_factory=datetime.now)
     in_reply_to: Optional[int] = None
     name: str = 'chat_history_message'
-    id: Optional[int] = None
 
     def __str__(self) -> str:
         nl = '\n'
@@ -51,7 +51,7 @@ class History(BaseModel):
 
     def get_message(self, id: int) -> Optional[Message]:
         for message in self.messages:
-            if isinstance(message, ChatMessage) and message.id == id:
+            if message.id == id:
                 return message
         return None
 
@@ -67,13 +67,12 @@ class History(BaseModel):
         while len(messages_stack) > 0:
             message = messages_stack.pop()
 
-            if isinstance(message, ChatMessage):
-                if message.id in included: continue
-                included.add(message.id)
-                if message.in_reply_to is not None:
-                    reply = self.get_message(message.in_reply_to)
-                    if reply is not None:
-                        messages_stack.append(reply)
+            if message.id in included: continue
+            included.add(message.id)
+            if isinstance(message, ChatMessage) and message.in_reply_to is not None:
+                reply = self.get_message(message.in_reply_to)
+                if reply is not None:
+                    messages_stack.append(reply)
 
             messages.append(message)
 
@@ -93,13 +92,13 @@ class History(BaseModel):
         return History(messages=messages)
 
     def __str__(self) -> str:
-        return '\n\n'.join([str(message) for message in self.messages])
+        return '\n------\n'.join([str(message) for message in self.messages])
 
     def to_messages(self) -> list[AIModelMessage]:
         return [msg.to_message() for msg in self.messages]
 
     def add_message(self, message: Message):
-        if isinstance(message, ChatMessage) and message.id is None:
+        if message.id is None:
             message.id = len(self.messages)
         self.messages.append(message)
 
@@ -121,6 +120,9 @@ class HistoryView(BaseModel):
 
     def add_message(self, message: Message):
         self.base_history.add_message(message)
+
+    def __str__(self) -> str:
+        return self.history.__str__()
 
 class Classifier(BaseModel):
     prompt = Template(template=
@@ -148,8 +150,8 @@ HinterFn = Callable[[Message, HistoryView], Awaitable[HintMessage]]
 class Hinter(BaseModel):
     generators: dict[str, HinterFn]
 
-    async def generate_hint(self, category: str, message: Message, context: HistoryView) -> HintMessage:
-        if category not in self.generators: raise ValueError(f'Invalid category: {category}')
+    async def generate_hint(self, category: str, message: Message, context: HistoryView) -> Optional[HintMessage]:
+        if category not in self.generators: return None
         hinter = self.generators[category]
         return await hinter(message, context)
 
@@ -162,6 +164,7 @@ class ConversationalAgent(BaseModel):
         " Your main language is {language}."
         " Use search results to enhance your anwers."
         " Only provide answers about courses, professors, and other academic information based on the search results."
+        " You have access to the current time."
         "\n\nMiscellaneous information:\n{information}"
     )
     history_view: HistoryView

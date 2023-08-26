@@ -22,7 +22,7 @@ async def amain():
     classifier = Classifier(
         model=model_3_5,
         categories={
-            'courses': 'Questions related to the courses database. This database contains information about the current courses, classes, classrooms, teachers.',
+            'courses': 'Questions related to the courses, classes, classrooms, and professors database.',
             'university': 'Questions related to the university that are not related to the courses database. This category encompasses historical university data, university regulations, high level description of courses.',
             'general': 'General conversation questions that do not fall under other categories.'
         }
@@ -33,7 +33,7 @@ async def amain():
         EnhancerStep(model=model_3_5.override(temperature=1), n_generations=5),
     ]
 
-    db = aiosqlite.connect('db.sqlite3')
+    db = await aiosqlite.connect('db.sqlite3')
 
     executor = SQLiteExecutor(engine='sqlite', db_schema=schema, connection=db)
 
@@ -60,20 +60,23 @@ async def amain():
         )
     )
 
-    name = input('Your name: ')
-    while True:
-        message = input('You: ')
-        if message == 'quit':
-            break
-        if message == 'hist':
-            print(hist)
-            continue
+    try:
+        name = input('Your name: ')
+        while True:
+            message = input('You: ')
+            if message == 'quit':
+                break
+            if message == 'hist':
+                print(hist)
+                continue
 
-        msg = ChatMessage(role='user', sender=name, content=message)
+            msg = ChatMessage(role='user', sender=name, content=message)
 
-        print(f'Bot: ', end='', flush=True)
-        async for reply in bot.streaming_reply_to_message(msg):
-            print(reply, end='', flush=True)
-        print()
+            print(f'Bot: ', end='', flush=True)
+            async for reply in bot.streaming_reply_to_message(msg):
+                print(reply, end='', flush=True)
+            print()
+    finally:
+        await db.close()
 
 asyncio.run(amain())
